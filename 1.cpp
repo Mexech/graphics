@@ -12,36 +12,42 @@ void translate(float *coords, float *offset) {
 }
 
 void rotate(float *coords, int angle) {
-    double theta = (double)(angle % 180)*M_PI/180;
+    double theta = (double)(angle % 180) * M_PI / 180;
     float x = coords[2];
     float y = coords[3];
-    x = coords[2]*cos(theta) + coords[3]*sin(theta); 
-    y = -coords[2]*sin(theta) + coords[3]*cos(theta); 
+    x = coords[2] * cos(theta) + coords[3] * sin(theta); 
+    y = -coords[2] * sin(theta) + coords[3] * cos(theta); 
     coords[2] = x;
     coords[3] = y;
 }
 
 void scale(float *coords, float prev_coef, float coef) {
-    for (int i=0; i<4; i++)
+    for (int i = 0; i < 4; i++)
         coords[i] = coords[i] / prev_coef * coef;
 }
 
 void line_b(int x1, int y1, int x2, int y2) {
-    int dx = abs(x2-x1), sx = x1<x2 ? 1 : -1;
-    int dy = abs(y2-y1), sy = y1<y2 ? 1 : -1; 
-    int err = (dx>dy ? dx : -dy)/2, e2;
+    int dx = abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
+    int dy = abs(y2 - y1), sy = y1 < y2 ? 1 : -1; 
+    int err = (dx > dy ? dx : -dy) / 2, e2;
     while (1) {
-        putpixel(x1, y1, WHITE);
-        if (x1==x2 && y1==y2) break;
+        putpixel(x1, y1, CYAN);
+        if (x1 == x2 && y1 == y2)
+            break;
         e2 = err;
-        if (e2 >-dx) { err -= dy; x1 += sx; }
-        if (e2 < dy) { err += dx; y1 += sy; }
+        if (e2 >-dx) {
+            err -= dy;
+            x1 += sx;
+        }
+        if (e2 < dy) {
+            err += dx;
+            y1 += sy;
+        }
     }
 }
   
 int main()
 {
-    bool changed_parameter = false;
     float offset[2] = {0, 0};
     int angle = 0;
     int speed = 5;
