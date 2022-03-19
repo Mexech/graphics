@@ -2,7 +2,7 @@
 #include <graphics.h>
 #include <math.h>
 
-float coords[2][4] = {{150, 150, 450, 150}, {150, 250, 450, 250}}; 
+float coords[2][4] = {{150, 150, 450, 150}, {150, 250, 450, 500}}; 
 
 void translate(float *coords, float *offset) {
     coords[0] += offset[0];
