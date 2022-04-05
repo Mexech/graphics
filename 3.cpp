@@ -4,26 +4,10 @@
 
 #define SIZE 4
 
-float coords[SIZE][2] = {{300, 309}, {304, 325}, {282, 311}, {276, 314}}; 
+float coords[SIZE][2] = {{-10, 309}, {504, 425}, {420, 150}, {390, 500}}; 
 
-void line_b(int x1, int y1, int x2, int y2) {
-    int dx = abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
-    int dy = abs(y2 - y1), sy = y1 < y2 ? 1 : -1; 
-    int err = (dx > dy ? dx : -dy) / 2, e2;
-    while (1) {
-        putpixel(x1, y1, WHITE);
-        if (x1 == x2 && y1 == y2)
-            break;
-        e2 = err;
-        if (e2 >-dx) {
-            err -= dy;
-            x1 += sx;
-        }
-        if (e2 < dy) {
-            err += dx;
-            y1 += sy;
-        }
-    }
+int cmp(const void * a, const void * b) {
+   return ( *(float*)a - *(float*)b );
 }
 
 bool ccw(float a[2], float b[2], float c[2]) {
@@ -36,22 +20,22 @@ bool intersect(float a[2], float b[2], float c[2], float d[2]) {
 
 bool intersection(float line1[2][2], float line2[2][2], float *i_x, float *i_y) 
 {
-    float s1_x, s1_y, s2_x, s2_y;
-    s1_x = line1[1][0] - line1[0][0];
-    s1_y = line1[1][1] - line1[0][1];
-    s2_x = line2[1][0] - line2[0][0];
-    s2_y = line2[1][1] - line2[0][1];
+    float c1_x, c1_y, c2_x, c2_y;
+    c1_x = line1[1][0] - line1[0][0];
+    c1_y = line1[1][1] - line1[0][1];
+    c2_x = line2[1][0] - line2[0][0];
+    c2_y = line2[1][1] - line2[0][1];
 
     float s, t;
-    s = (-s1_y * (line1[0][0] - line2[0][0]) + s1_x * (line1[0][1] - line2[0][1])) / (-s2_x * s1_y + s1_x * s2_y);
-    t = ( s2_x * (line1[0][1] - line2[0][1]) - s2_y * (line1[0][0] - line2[0][0])) / (-s2_x * s1_y + s1_x * s2_y);
-
+    s = (-c1_y * (line1[0][0] - line2[0][0]) + c1_x * (line1[0][1] - line2[0][1])) / (-c2_x * c1_y + c1_x * c2_y);
+    t = ( c2_x * (line1[0][1] - line2[0][1]) - c2_y * (line1[0][0] - line2[0][0])) / (-c2_x * c1_y + c1_x * c2_y);
+    
     if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
     {
         if (i_x != NULL)
-            *i_x = line1[0][0] + (t * s1_x);
+            *i_x = line1[0][0] + (t * c1_x);
         if (i_y != NULL)
-            *i_y = line1[0][1] + (t * s1_y);
+            *i_y = line1[0][1] + (t * c1_y);
         return 1;
     }
 
@@ -60,10 +44,10 @@ bool intersection(float line1[2][2], float line2[2][2], float *i_x, float *i_y)
 
 bool in_poly(float x, float y, float coords[SIZE][2], float bounds[2][2]) {
     int intersections = 0;
-    float pt_vec[2][2] = {{bounds[0][0]-1, y}, {x, y}};
+    float pt_vec[2][2] = {{bounds[0][0] - 1, y}, {x, y}};
     for (int i = 0; i < SIZE; i++)
     {
-        float line[2][2] = {{coords[i][0]),             coords[i][1]},
+        float line[2][2] = {{coords[i][0],             coords[i][1]},
                             {coords[(i + 1) % SIZE][0], coords[(i + 1) % SIZE][1]}};
         if (intersect(line[0], line[1], pt_vec[0], pt_vec[1]))
             intersections++;
@@ -102,37 +86,26 @@ void fill(float coords[SIZE][2]) {
         else if (y > bounds[1][1])
             bounds[1][1] = y;
     }
-    int count = 0;
     for (int i = bounds[0][1]; i <= bounds[1][1]; i++) {
-        bool found = false;
-        int pts[20] = {0};
-        for (int j = bounds[0][0]; j <= bounds[1][0]; j++) {
-            if ((getpixel(j, i) && !getpixel(j + 1, i))) //|| (getpixel(j, i) && !getpixel(j - 1, i)))
-            {
-                // putpixel(j, i, BLUE);
-                pts[count++] = j;
-            }
-            else if (getpixel(j, i) && !getpixel(j - 1, i))
-            {
-                // putpixel(j, i, GREEN);
-                pts[count++] = j;
-            }
-        }
-        if (count > 1)
+        float pts[20] = {0};
+        int count = 0;
+
+        float pt_vec[2][2] = {{bounds[0][0] - 1, i}, {bounds[1][0] + 1, i}};
+        for (int j = 0; j < SIZE; j++)
         {
-            for (int j = 0; j < count - 1; j++) {
-                if (i == 310)
-                    printf("%d ", in_poly(((pts[j] + pts[j+1]) / 2), i, coords, bounds));
-                if (in_poly(((pts[j] + pts[j+1]) / 2), i, coords, bounds)) {
-                    line(pts[j], i, pts[j + 1], i);    
-                    // putpixel(((pts[j] + pts[j+1]) / 2), i, RED);
-                }
-                // putpixel(pts[j], i, BLUE);
-            }
-            if (i == 310)
-                printf("\n");
+            float line[2][2] = {{coords[j][0],              coords[j][1]              },
+                                {coords[(j + 1) % SIZE][0], coords[(j + 1) % SIZE][1]}};
+            float x, y;
+            if (intersection(pt_vec, line, &x, &y))
+                pts[count++] = x;
         }
-        count = 0;
+        if (count) {
+            qsort(pts, count, sizeof(float), cmp);
+            for (int j = 0; j < count; j++) {
+                if (pts[j+1] && in_poly(((pts[j] + pts[j+1]) / 2), i, coords, bounds))
+                    line(pts[j], i, pts[j + 1], i);  
+            }
+        }
     }
 }
   
@@ -194,8 +167,6 @@ int main()
         for (int i = 0; i < SIZE; i++)
             translate(coords[i], origin);
 
-        for (int i = 0; i < SIZE; i++)
-            line_b(coords[i][0], coords[i][1], coords[(i + 1) % SIZE][0], coords[(i + 1) % SIZE][1]);
         fill(coords);
         memset(offset, 0, sizeof(offset));
         angle = 0;
