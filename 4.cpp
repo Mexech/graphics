@@ -4,7 +4,7 @@
 
 #define COORDS_SIZE 5
 #define GRAPH_SIZE 8
-#define INIT_SPEED 1
+#define INIT_SPEED 0.5
 
 float deg2rad = M_PI / 180.0;
 
@@ -53,10 +53,14 @@ void PerspectiveFOV(float fov, float aspect, float near_c, float far_c, float* r
     float xScale = yScale/aspect;
     float diff = near_c - far_c;
     float m[] = {
-        xScale, 0, 0, 0,
-        0, yScale, 0, 0,
-        0, 0, (far_c + near_c)/diff, (2*near_c*far_c)/diff, 
-        0, 0, 1, 0
+        // xScale, 0, 0, 0,
+        // 0, yScale, 0, 0,
+        // 0, 0, (far_c + near_c)/diff, (2*near_c*far_c)/diff, 
+        // 0, 0, 1, 0
+        0.707, -0.408, 0, 0,
+        0, 0.816, 0, 0,
+        -0.707, -0.408, 0, 0,
+        0, 0, 0, 1
     };
     memcpy(ret, m, sizeof(float)*16);
 }
@@ -124,7 +128,7 @@ int main() {
         }
 
         float projection_mat[16] = {0};
-        PerspectiveFOV(90, getwindowwidth()/getwindowheight(), 0.1, 100, projection_mat);
+        PerspectiveFOV(120, getwindowwidth()/getwindowheight(), 0.1, 100, projection_mat);
         float projected_coords[COORDS_SIZE][3];
         for (int i = 0; i < COORDS_SIZE; i++) {
             float projected_pt[4] = {0};
