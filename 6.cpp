@@ -6,8 +6,12 @@
 #define INIT_SPEED 1
 #define OBJECTS_SIZE 2
 #define FACES_SIZE 12
+#define FACES_NUM FACES_SIZE / 3
 #define CLRS_SIZE FACES_SIZE / 3
+#define FACE_PARAMS 4
+#define EPS 0.00001
 
+enum face_location {INFRONT, WITHIN, BEHIND, SPLIT};
 float deg2rad = M_PI / 180.0;
 
 float objects[OBJECTS_SIZE][COORDS_SIZE][3] = {{{0.20, 0.5, 1.5},
@@ -20,27 +24,272 @@ float objects[OBJECTS_SIZE][COORDS_SIZE][3] = {{{0.20, 0.5, 1.5},
                                                 {0.50, 2, 1.0},
                                                 {1.00, 2, 2.0}}};
 
-int faces[FACES_SIZE] = {3, 2, 0,
-                         2, 1, 0, 
-                         0, 1, 3,
-                         1, 2, 3};
+int graphs[FACES_SIZE] = {3, 2, 0,
+                          2, 1, 0, 
+                          0, 1, 3,
+                          1, 2, 3};
 
 int clrs[CLRS_SIZE] = {BLUE, GREEN, RED, MAGENTA};
 
-struct node {
-    int *face;
-    struct node *left;
-    struct node *right;
-};
+typedef struct tpoint {
+    float x;
+    float y;
+    float z;
+} point;
 
-struct node *newNode(int a, int b, int c) {
-    struct node *node = (struct node*)malloc(sizeof(struct node));
-    int *face = (int *)malloc(3*sizeof(int));
-    face[0] = a; face[1] = b; face[2] = c;
-    node->face = face;
+typedef struct tplane {
+    float a;
+    float b;
+    float c;
+    float d;
+} plane;
+
+typedef struct tface {
+    point a;
+    point b;
+    point c;
+    int clr;
+} face;
+
+typedef struct t_list_node {
+    face *f;
+    struct t_list_node *next;
+} list_node;
+
+list_node *newListNode(face tmp_f) {
+    list_node *node = (list_node*)malloc(sizeof(list_node));
+    face *f = (face *)malloc(sizeof(face));
+    f->a = {tmp_f.a.x, tmp_f.a.y, tmp_f.a.z};
+    f->b = {tmp_f.b.x, tmp_f.b.y, tmp_f.b.z};
+    f->c = {tmp_f.c.x, tmp_f.c.y, tmp_f.c.z};
+    node->f = f;
+    node->next = NULL;
+    return node;
+}
+
+typedef struct {
+    list_node *head;
+    list_node *tail;
+} list;
+
+list *initList() {
+    list *l = (list*)malloc(sizeof(list));
+	l->head = NULL;
+	l->tail = NULL;
+    return l;
+}
+
+int isEmpty(list *l) {
+    return l->head == NULL;
+}
+
+void clearList(list *list) {
+    if (list->head != NULL) {
+        list_node *tmp = list->head;
+        list_node *next_node;
+        do {
+            next_node = tmp->next;
+            free(tmp->f);
+            free(tmp);
+        } while (tmp->next != NULL, tmp = next_node);
+    }
+}
+
+void push(list *list, list_node *node) {
+    if (list->head == NULL) {
+        list->head = node;
+        list->tail = node;
+    } else {
+        list->tail->next = node;
+        list->tail = node;
+    }
+}
+
+face pop(list *list) {
+    if (list->head == NULL) {
+        face res = {-1};
+        return res;
+    } else {
+        list_node *tmp = list->head;
+        face res = {0};
+        res.a = {tmp->f->a.x, tmp->f->a.y, tmp->f->a.z};
+        res.b = {tmp->f->b.x, tmp->f->b.y, tmp->f->b.z};
+        res.c = {tmp->f->c.x, tmp->f->c.y, tmp->f->c.z};
+        if (list->head == list->tail) {
+            list->head = NULL;
+            list->tail = NULL;
+        } else 
+            list->head = list->head->next;
+        
+        free(tmp->f);
+        free(tmp);
+        return res;
+    }
+}
+
+typedef struct t_tree_node {
+    list *faces;
+    struct t_tree_node *left;
+    struct t_tree_node *right;
+} tree_node;
+
+tree_node *newNode() {
+    tree_node *node = (tree_node*)malloc(sizeof(tree_node));
+    list *faces = initList();
+    node->faces = faces;
     node->left = NULL;
     node->right = NULL;
     return node;
+}
+
+void clearTree(tree_node *root) {
+    if (root == NULL) return;
+    clearTree(root->left);
+    clearTree(root->right);
+    clearList(root->faces);
+    free(root);
+}
+
+int cmp(const void * a, const void * b) {
+   return ( *(float*)a - *(float*)b );
+}
+
+bool ccw(float *a, float *b, float *c) {
+    return (c[1]-a[1])*(b[0]-a[0]) > (b[1]-a[1])*(c[0]-a[0]);
+}
+
+bool intersect(float a[2], float b[2], float c[2], float d[2]) {
+    return (ccw(a, c, d) != ccw(b, c, d)) && (ccw(a, b, c) != ccw(a, b, d));
+}
+
+float dot(point a, point b) {
+    return a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+point cross(point a, point b) {
+    return {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
+}
+
+point sum(point a, point b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+point subtract(point a, point b) {
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+point mult(point a, float n) {
+    return {a.x*n, a.y*n, a.z*n};
+}
+
+point divide(point a, float n) {
+    return {a.x / n, a.y / n, a.z / n};
+}
+
+bool intersection(float line1[2][2], float line2[2][2], float *i_x, float *i_y) {
+    float c1_x, c1_y, c2_x, c2_y;
+    c1_x = line1[1][0] - line1[0][0];
+    c1_y = line1[1][1] - line1[0][1];
+    c2_x = line2[1][0] - line2[0][0];
+    c2_y = line2[1][1] - line2[0][1];
+
+    float s, t;
+    s = (-c1_y * (line1[0][0] - line2[0][0]) + c1_x * (line1[0][1] - line2[0][1])) / (-c2_x * c1_y + c1_x * c2_y);
+    t = ( c2_x * (line1[0][1] - line2[0][1]) - c2_y * (line1[0][0] - line2[0][0])) / (-c2_x * c1_y + c1_x * c2_y);
+    
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
+    {
+        if (i_x != NULL)
+            *i_x = line1[0][0] + (t * c1_x);
+        if (i_y != NULL)
+            *i_y = line1[0][1] + (t * c1_y);
+        return 1;
+    }
+
+    return 0;
+}
+
+plane face2plane(face f) {
+    point d1 = subtract(f.b, f.a);
+    point d2 = subtract(f.c, f.a);
+    point n = cross(d1, d2);
+    return {n.x, n.y, n.z, -dot(f.a, n)};
+}
+
+enum face_location located(face cur_f, face f) {
+    plane p = face2plane(cur_f);
+    int has_pt_infront = 0, has_pt_behind = 0;
+    point poly[3] = {f.a, f.b, f.c};
+    for (int i = 0; i < 3; i++) {
+        float sign = p.a*poly[i].x + p.b*poly[i].y + p.c*poly[i].z + p.d;
+        if (sign > EPS) has_pt_infront = 1; 
+        if (sign > -EPS) has_pt_behind = 1;
+    }
+    if(has_pt_infront && has_pt_behind) return SPLIT;
+    if(has_pt_infront) return INFRONT;
+    if(has_pt_behind) return BEHIND;
+    return WITHIN;
+}
+
+void planesIntersection(plane p1, plane p2, point *r_pt, point *r_dir) { // useless
+    point n1 = {p1.a, p1.b, p1.c}, n2 = {p2.a, p2.b, p2.c};
+    point n3 = cross(n1, n2);
+    float det = n3.x*n3.x + n3.y*n3.y + n3.z*n3.z;
+    point tmp_pt = divide(sum(mult(cross(n3, n2), p1.d),
+                              mult(cross(n1, n3), p2.d)), det);
+    r_pt->x = tmp_pt.x; r_dir->x = n3.x;
+    r_pt->y = tmp_pt.y; r_dir->y = n3.y;
+    r_pt->z = tmp_pt.z; r_dir->z = n3.z;
+}
+
+int planeLine(point pt1, point pt2, plane p, point *res) {
+    point ray = subtract(pt2, pt1);
+    point n = {p.a, p.b, p.c}; 
+    if (dot(n, ray) == 0)
+        return 0;
+    float t = -(p.d + dot(pt1, n)) / dot(ray, n);
+    res->x = pt1.x + t*ray.x;
+    res->y = pt1.y + t*ray.y;
+    res->z = pt1.z + t*ray.z;
+    return 1;
+}
+
+void split(face cur_f, face f, list *unsorted_faces) {
+    plane p = face2plane(cur_f);
+    point poly[3] = {f.a, f.b, f.c}, isects[2] = {0};
+    point infront[3] = {0}, behind[3] = {0}; // if some points are close to plane or even lie on it 
+    int i_num = 0, b_num = 0, isects_num = 0; // consider them lying behind the plane
+    for (int i = 0; i < 3; i++) {
+        float sign = p.a*poly[i].x + p.b*poly[i].y + p.c*poly[i].z + p.d;
+        if (sign > EPS) infront[i_num++] = poly[i];
+        else behind[b_num++] = poly[i];
+        point isect_pt = {0};
+        if (planeLine(poly[i], poly[(i + 1) % 3], p, &isect_pt))
+            isects[isects_num++] = isect_pt;
+    }
+    // TODO push faces accordingly
+    // if 2 infront 1 behind
+    // if 1 infront 2 behind
+}
+
+void bspSort(tree_node *node, list *unsorted_faces) { // TODO: start implementing algo; 
+    list *left = initList(), *current = initList(), *right = initList();
+    face cur_f = pop(unsorted_faces);
+    push(current, newListNode(cur_f));
+    while (!isEmpty(unsorted_faces)) {
+        face f = pop(unsorted_faces);
+        split(cur_f, f, unsorted_faces);
+        enum face_location loc = located(cur_f, f);
+        if (loc == INFRONT)
+            push(left, newListNode(f));
+        else if (loc == WITHIN)
+            push(current, newListNode(f));
+        else if (loc == BEHIND)
+            push(right, newListNode(f));
+        else if (loc == SPLIT) {
+            split(cur_f, f, unsorted_faces);
+        }
+    }
 }
 
 void translate(float *coord, float *offset) {
@@ -62,11 +311,11 @@ void scale(float *coord, float prev_coef, float coef) {
         coord[i] = coord[i] / prev_coef * coef;
 }
 
-void drawMesh(float coords[][3], int faces[]) {
+void drawMesh(float coords[][3], int graphs[]) {
     for (int i = 0; i < FACES_SIZE; i += 3) {
         for (int j = 0; j < 3; j++) {
-            float *pt1 = coords[faces[i + j]];
-            float *pt2 = coords[faces[i + (j + 1) % 3]];
+            float *pt1 = coords[graphs[i + j]];
+            float *pt2 = coords[graphs[i + (j + 1) % 3]];
             line(pt1[0], pt1[1], pt2[0], pt2[1]);
         }
     }
@@ -88,55 +337,6 @@ void PerspectiveFOV(float fov, float aspect, float near_c, float far_c, float* r
         0, 0, 1, 0
     };
     memcpy(ret, m, sizeof(float)*16);
-}
-
-int cmp(const void * a, const void * b) {
-   return ( *(float*)a - *(float*)b );
-}
-
-bool ccw(float *a, float *b, float *c) {
-    return (c[1]-a[1])*(b[0]-a[0]) > (b[1]-a[1])*(c[0]-a[0]);
-}
-
-bool intersect(float a[2], float b[2], float c[2], float d[2]) {
-    return (ccw(a, c, d) != ccw(b, c, d)) && (ccw(a, b, c) != ccw(a, b, d));
-}
-
-float dot(float *a, float *b) {
-    float res = 0;
-    for (int i = 0; i < 3; i++)
-        res += a[i]*b[i];
-    return res;
-}
-
-float cross(float *a, float *b, float *c) {
-    c[0] = a[1]*b[2] - a[2]*b[1];
-    c[1] = a[2]*b[0] - a[0]*b[2];
-    c[2] = a[0]*b[1] - a[1]*b[0];
-}
-
-bool intersection(float line1[2][2], float line2[2][2], float *i_x, float *i_y) 
-{
-    float c1_x, c1_y, c2_x, c2_y;
-    c1_x = line1[1][0] - line1[0][0];
-    c1_y = line1[1][1] - line1[0][1];
-    c2_x = line2[1][0] - line2[0][0];
-    c2_y = line2[1][1] - line2[0][1];
-
-    float s, t;
-    s = (-c1_y * (line1[0][0] - line2[0][0]) + c1_x * (line1[0][1] - line2[0][1])) / (-c2_x * c1_y + c1_x * c2_y);
-    t = ( c2_x * (line1[0][1] - line2[0][1]) - c2_y * (line1[0][0] - line2[0][0])) / (-c2_x * c1_y + c1_x * c2_y);
-    
-    if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
-    {
-        if (i_x != NULL)
-            *i_x = line1[0][0] + (t * c1_x);
-        if (i_y != NULL)
-            *i_y = line1[0][1] + (t * c1_y);
-        return 1;
-    }
-
-    return 0;
 }
 
 bool in_poly(float x, float y, float coords[3][2], float bounds[2][2]) {
@@ -188,23 +388,30 @@ void fill(float coords[3][2]) {
     }
 }
 
-int backfaceCulling(float coords[][3], int faces[], float *visible, int faces_n) {
+point convert(float pt[3]) {
+    point res = {pt[0], pt[1], pt[2]};
+    return res;
+}
+
+void backfaceCulling(float coords[][3], int graphs[], list *visible) {
     for (int i = 0; i < FACES_SIZE; i += 3) {
-        float *a = coords[faces[i]];
-        float *b = coords[faces[i + 1]];
-        float *c = coords[faces[i + 2]];
-        float n[3] = {0};
-        float d1[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
-        float d2[3] = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
-        cross(d1, d2, n);
-        if (-dot(a, n) < 0)
-            visible[faces_n++] = i;
+        point a = convert(coords[graphs[i]]);
+        point b = convert(coords[graphs[i + 1]]);
+        point c = convert(coords[graphs[i + 2]]);
+        point d1 = subtract(b, a);
+        point d2 = subtract(c, a);
+        point n = cross(d1, d2);
+        if (-dot(a, n) < 0) {
+            face f = {a, b, c, 0};
+            push(visible, newListNode(f));
+        }
     }
-    return faces_n;
+
 }
 
 int main() {
     float offsets[2][3] = {{-1, -1, 0}, {1, -1, 0}}; 
+    // float offsets[2][3] = {{0, 0, 0}, {0, 0, 0}}; 
     float angles[2][3]  = {{0, 0, 0}, {0, 0, 0}};
     bool too_close = false;
     int angle = 0, n = 0;
@@ -268,8 +475,8 @@ int main() {
         }
         too_close = false;
         cleardevice();
-
         
+        list *unsorted_faces = initList();
         float (*objects_p)[COORDS_SIZE][3] = objects;
         for (int k = 0; k < OBJECTS_SIZE; k++) {
             float (*coords)[3] = objects_p[k];
@@ -296,27 +503,28 @@ int main() {
                 rotate(coords[i], angle);
                 scale(coords[i], coefs[k][0], coefs[k][1]);
                 translate(coords[i], origin);
+                // {
                 mult(coords[i], projection_mat, projected_pt);
                 for (int j = 0; j < 3; j++)
                     projected_coords[i][j] = 0.5 * (projected_pt[j] / projected_pt[3] + 1);
                 projected_coords[i][0] *= getwindowwidth();
                 projected_coords[i][1] *= getwindowheight();
+                // } this should be after sorting
             }
-            float vis_faces[CLRS_SIZE] = {0};
-            // int faces_n = 0;
-            int faces_n = backfaceCulling(coords, faces, vis_faces, faces_n); // TODO: vis faces should consist of [shape_i, face_i]
-            for (int i = 0; i < faces_n; i++) {
-                int face_i = vis_faces[i];
-                float face[3][2] = {{projected_coords[faces[face_i]][0], projected_coords[faces[face_i]][1]},
-                                   {projected_coords[faces[face_i + 1]][0], projected_coords[faces[face_i + 1]][1]},
-                                   {projected_coords[faces[face_i + 2]][0], projected_coords[faces[face_i + 2]][1]}};
-                setcolor(clrs[face_i / 3]);
-                fill(face);
-            }
-            setcolor(WHITE);
-            drawMesh(projected_coords, faces);
+            backfaceCulling(coords, graphs, unsorted_faces);
         }
-
+        tree_node *root = newNode();
+        bspSort(root, unsorted_faces);
+        // for (int i = 0; i < faces_n; i++) {
+        //     int face_i = vis_faces[i];
+        //     float face[3][2] = {{projected_coords[graphs[face_i]][0], projected_coords[graphs[face_i]][1]},
+        //                         {projected_coords[graphs[face_i + 1]][0], projected_coords[graphs[face_i + 1]][1]},
+        //                         {projected_coords[graphs[face_i + 2]][0], projected_coords[graphs[face_i + 2]][1]}};
+        //     setcolor(clrs[face_i / 3]);
+        //     fill(face);
+        // }
+        // setcolor(WHITE);
+        
         swapbuffers();
         for (int i = 0; i < OBJECTS_SIZE; i++) {
             coefs[i][0] = coefs[i][1];
