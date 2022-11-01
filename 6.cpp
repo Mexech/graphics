@@ -208,30 +208,39 @@ bool intersection(float line1[2][2], float line2[2][2], float *i_x, float *i_y) 
 
     return 0;
 }
-
+//tested
 plane face2plane(face f) {
     point d1 = subtract(f.b, f.a);
     point d2 = subtract(f.c, f.a);
     point n = cross(d1, d2);
     return {n.x, n.y, n.z, -dot(f.a, n)};
 }
-
+plane face2plane(face *f) {
+    point d1 = subtract(f->b, f->a);
+    point d2 = subtract(f->c, f->a);
+    point n = cross(d1, d2);
+    return {n.x, n.y, n.z, -dot(f->a, n)};
+}
+float fit(point pt, plane p) {
+    return p.a*pt.x + p.b*pt.y + p.c*pt.z + p.d;
+}
+//tested
 enum face_location located(face cur_f, face f) {
     plane p = face2plane(cur_f);
     int has_pt_infront = 0, has_pt_behind = 0;
     point poly[3] = {f.a, f.b, f.c};
     for (int i = 0; i < 3; i++) {
-        float sign = p.a*poly[i].x + p.b*poly[i].y + p.c*poly[i].z + p.d;
+        float sign = fit(poly[i], p);
         if (sign > EPS) has_pt_infront = 1; 
-        if (sign > -EPS) has_pt_behind = 1;
+        if (sign < -EPS) has_pt_behind = 1;
     }
     if(has_pt_infront && has_pt_behind) return SPLIT;
     if(has_pt_infront) return INFRONT;
     if(has_pt_behind) return BEHIND;
     return WITHIN;
 }
-
-void planesIntersection(plane p1, plane p2, point *r_pt, point *r_dir) { // useless
+//unused
+void planesIntersection(plane p1, plane p2, point *r_pt, point *r_dir) {
     point n1 = {p1.a, p1.b, p1.c}, n2 = {p2.a, p2.b, p2.c};
     point n3 = cross(n1, n2);
     float det = n3.x*n3.x + n3.y*n3.y + n3.z*n3.z;
@@ -241,7 +250,7 @@ void planesIntersection(plane p1, plane p2, point *r_pt, point *r_dir) { // usel
     r_pt->y = tmp_pt.y; r_dir->y = n3.y;
     r_pt->z = tmp_pt.z; r_dir->z = n3.z;
 }
-
+//tested for general case not touching
 int planeLine(point pt1, point pt2, plane p, point *res) {
     point ray = subtract(pt2, pt1);
     point n = {p.a, p.b, p.c}; 
@@ -253,32 +262,42 @@ int planeLine(point pt1, point pt2, plane p, point *res) {
     res->z = pt1.z + t*ray.z;
     return 1;
 }
-
+// tested for one being infront quite far away
 void split(face cur_f, face f, list *unsorted_faces) {
     plane p = face2plane(cur_f);
     point poly[3] = {f.a, f.b, f.c}, isects[2] = {0};
     point infront[3] = {0}, behind[3] = {0}; // if some points are close to plane or even lie on it 
     int i_num = 0, b_num = 0, isects_num = 0; // consider them lying behind the plane
     for (int i = 0; i < 3; i++) {
-        float sign = p.a*poly[i].x + p.b*poly[i].y + p.c*poly[i].z + p.d;
+        float sign = fit(poly[i], p);
         if (sign > EPS) infront[i_num++] = poly[i];
         else behind[b_num++] = poly[i];
         point isect_pt = {0};
         if (planeLine(poly[i], poly[(i + 1) % 3], p, &isect_pt))
             isects[isects_num++] = isect_pt;
     }
-    // TODO push faces accordingly
-    // if 2 infront 1 behind
-    // if 1 infront 2 behind
+    
+    if (i_num == 1) {
+        face new_faces[] = {{infront[0], isects[0], isects[1]},
+                            {isects[0], behind[0], isects[1]},
+                            {isects[1], behind[0], behind[1]}};
+        for (int i = 0; i < 3; i++)
+            push(unsorted_faces, newListNode(new_faces[i]));
+    } else if (i_num == 2) {
+        face new_faces[] = {{behind[0], isects[0], isects[1]},
+                            {isects[0], infront[0], isects[1]},
+                            {isects[1], infront[0], infront[1]}};
+        for (int i = 0; i < 3; i++)
+            push(unsorted_faces, newListNode(new_faces[i]));
+    } 
 }
 
-void bspSort(tree_node *node, list *unsorted_faces) { // TODO: start implementing algo; 
+void bspSort(tree_node *root, list *unsorted_faces) {
     list *left = initList(), *current = initList(), *right = initList();
     face cur_f = pop(unsorted_faces);
     push(current, newListNode(cur_f));
     while (!isEmpty(unsorted_faces)) {
         face f = pop(unsorted_faces);
-        split(cur_f, f, unsorted_faces);
         enum face_location loc = located(cur_f, f);
         if (loc == INFRONT)
             push(left, newListNode(f));
@@ -289,6 +308,79 @@ void bspSort(tree_node *node, list *unsorted_faces) { // TODO: start implementin
         else if (loc == SPLIT) {
             split(cur_f, f, unsorted_faces);
         }
+    }
+    root->faces = current;
+    if (!isEmpty(left)) {
+        root->left = newNode();
+        bspSort(root->left, left);
+    } else 
+        root->left = NULL;
+    if (!isEmpty(right)) {
+        root->right = newNode();
+        bspSort(root->right, right);
+    } else
+        root->right = NULL;
+}
+
+
+void mult(float* pt, float* mat, float* ret) {
+    for (int i = 0; i < 16; i++)
+        ret[i / 4] += (i % 4 != 3 ? pt[i % 4] : 1)*mat[i];
+}
+
+void PerspectiveFOV(float fov, float aspect, float near_c, float far_c, float* ret) {
+    float yScale = 1/tan(deg2rad*fov/2);
+    float xScale = yScale/aspect;
+    float diff = near_c - far_c;
+    float m[] = {
+        xScale, 0, 0, 0,
+        0, yScale, 0, 0,
+        0, 0, (far_c + near_c)/diff, (2*near_c*far_c)/diff, 
+        0, 0, 1, 0
+    };
+    memcpy(ret, m, sizeof(float)*16);
+}
+
+void render(face f) {
+    float projection_mat[16] = {0};
+    PerspectiveFOV(120, getwindowwidth()/getwindowheight(), 0.1, 100, projection_mat);
+    point poly[3] = {f.a, f.b, f.c};
+    float projected_coords[3][3];
+    for (int i = 0; i < 3; i++) {
+        float pt[] = {poly[i].x, poly[i].y, poly[i].z, 0}, projected_pt[4];
+        mult(pt, projection_mat, projected_pt);
+        for (int j = 0; j < 3; j++)
+            projected_coords[i][j] = 0.5 * (projected_pt[j] / projected_pt[3] + 1);
+        projected_coords[i][0] *= getwindowwidth();
+        projected_coords[i][1] *= getwindowheight();
+    }
+    for (int i = 0; i < 3; i++) {
+        float *pt1 = projected_coords[i];
+        float *pt2 = projected_coords[(i + 1) % 3];
+        line(pt1[0], pt1[1], pt2[0], pt2[1]);
+    }
+}
+
+void paint(tree_node *root, point view) {
+    if(root == NULL)
+        return;
+    if (root->left == NULL && root->right == NULL){
+        while(!isEmpty(root->faces))
+            render(pop(root->faces));
+        return;
+    }
+    plane p = face2plane(root->faces->head->f);
+    float view_sign = fit(view, p);
+    if(view_sign > EPS){
+        paint(root->left, view);
+        while(!isEmpty(root->faces))
+            render(pop(root->faces));
+        paint(root->right, view);
+    } else {
+        paint(root->right, view);
+        while(!isEmpty(root->faces))
+            render(pop(root->faces));
+        paint(root->left, view);
     }
 }
 
@@ -319,24 +411,6 @@ void drawMesh(float coords[][3], int graphs[]) {
             line(pt1[0], pt1[1], pt2[0], pt2[1]);
         }
     }
-}
-
-void mult(float* pt, float* mat, float* ret) {
-    for (int i = 0; i < 16; i++)
-        ret[i / 4] += (i % 4 != 3 ? pt[i % 4] : 1)*mat[i];
-}
-
-void PerspectiveFOV(float fov, float aspect, float near_c, float far_c, float* ret) {
-    float yScale = 1/tan(deg2rad*fov/2);
-    float xScale = yScale/aspect;
-    float diff = near_c - far_c;
-    float m[] = {
-        xScale, 0, 0, 0,
-        0, yScale, 0, 0,
-        0, 0, (far_c + near_c)/diff, (2*near_c*far_c)/diff, 
-        0, 0, 1, 0
-    };
-    memcpy(ret, m, sizeof(float)*16);
 }
 
 bool in_poly(float x, float y, float coords[3][2], float bounds[2][2]) {
@@ -410,6 +484,7 @@ void backfaceCulling(float coords[][3], int graphs[], list *visible) {
 }
 
 int main() {
+    point view = {0};
     float offsets[2][3] = {{-1, -1, 0}, {1, -1, 0}}; 
     // float offsets[2][3] = {{0, 0, 0}, {0, 0, 0}}; 
     float angles[2][3]  = {{0, 0, 0}, {0, 0, 0}};
@@ -491,9 +566,6 @@ int main() {
                 neg_origin[i] = -origin[i];
             }
 
-            float projection_mat[16] = {0};
-            PerspectiveFOV(120, getwindowwidth()/getwindowheight(), 0.1, 100, projection_mat);
-            float projected_coords[COORDS_SIZE][3];
             for (int i = 0; i < COORDS_SIZE; i++) {
                 float projected_pt[4] = {0};
                 translate(coords[i], offset);
@@ -503,27 +575,12 @@ int main() {
                 rotate(coords[i], angle);
                 scale(coords[i], coefs[k][0], coefs[k][1]);
                 translate(coords[i], origin);
-                // {
-                mult(coords[i], projection_mat, projected_pt);
-                for (int j = 0; j < 3; j++)
-                    projected_coords[i][j] = 0.5 * (projected_pt[j] / projected_pt[3] + 1);
-                projected_coords[i][0] *= getwindowwidth();
-                projected_coords[i][1] *= getwindowheight();
-                // } this should be after sorting
             }
             backfaceCulling(coords, graphs, unsorted_faces);
         }
         tree_node *root = newNode();
         bspSort(root, unsorted_faces);
-        // for (int i = 0; i < faces_n; i++) {
-        //     int face_i = vis_faces[i];
-        //     float face[3][2] = {{projected_coords[graphs[face_i]][0], projected_coords[graphs[face_i]][1]},
-        //                         {projected_coords[graphs[face_i + 1]][0], projected_coords[graphs[face_i + 1]][1]},
-        //                         {projected_coords[graphs[face_i + 2]][0], projected_coords[graphs[face_i + 2]][1]}};
-        //     setcolor(clrs[face_i / 3]);
-        //     fill(face);
-        // }
-        // setcolor(WHITE);
+        paint(root, view);
         
         swapbuffers();
         for (int i = 0; i < OBJECTS_SIZE; i++) {
