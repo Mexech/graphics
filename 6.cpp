@@ -31,15 +31,13 @@ int graphs[FACES_SIZE] = {3, 2, 0,
                           0, 1, 3,
                           1, 2, 3};
 
-int clrs[CLRS_SIZE] = {BLUE, GREEN, RED, MAGENTA};
+int clrs[] = {CYAN, GREEN, RED, MAGENTA};
 
 typedef struct tpoint {
     float x;
     float y;
     float z;
 } point;
-
-point light_ray = {0, 1, 0};
 
 typedef struct tplane {
     float a;
@@ -265,7 +263,7 @@ point isect(point start, point end, plane p) {
     return {start.x + t*ray.x, start.y + t*ray.y, start.z + t*ray.z};
 }
 
-void split(face cur_f, face f, list *infront, list *behind, list *unsorted_faces) {
+void split(face cur_f, face f, list *unsorted_faces) {
     plane p = face2plane(cur_f);
 
     point poly[3] = {f.a, f.b, f.c};
@@ -281,24 +279,12 @@ void split(face cur_f, face f, list *infront, list *behind, list *unsorted_faces
         face new_faces[] = {{i[0], isect(i[0], b[0], p), isect(i[0], b[1], p), f.clr},
                             {b[0], b[1], isect(b[0], i[0], p), f.clr},
                             {b[1], isect(b[0], i[0], p), isect(b[1], i[0], p), f.clr}};
-        // enum face_location l1 = located(face2plane(cur_f), new_faces[0]);
-        // enum face_location l2 = located(face2plane(cur_f), new_faces[1]);
-        // enum face_location l3 = located(face2plane(cur_f), new_faces[2]);
-        // push(behind, newListNode(new_faces[0]));
-        // push(infront, newListNode(new_faces[1]));
-        // push(infront, newListNode(new_faces[2]));
         for (int i = 0; i < 3; i++)
             push(unsorted_faces, newListNode(new_faces[i]));
     } else if (i_num == 2) {
         face new_faces[] = {{b[0], isect(b[0], i[0], p), isect(b[0], i[1], p), f.clr},
                             {i[0], i[1], isect(i[0], b[0], p), f.clr},
                             {i[1], isect(i[0], b[0], p), isect(i[1], b[0], p), f.clr}};
-        // enum face_location l1 = located(face2plane(cur_f), new_faces[0]);
-        // enum face_location l2 = located(face2plane(cur_f), new_faces[1]);
-        // enum face_location l3 = located(face2plane(cur_f), new_faces[2]);
-        // push(infront, newListNode(new_faces[0]));
-        // push(behind, newListNode(new_faces[1]));
-        // push(behind, newListNode(new_faces[2]));
         for (int i = 0; i < 3; i++)
             push(unsorted_faces, newListNode(new_faces[i]));
     } 
@@ -318,7 +304,7 @@ void bspSort(tree_node *root, list *unsorted_faces) {
         else if (loc == BEHIND)
             push(right, newListNode(f));
         else if (loc == SPLIT) {
-            split(cur_f, f, left, right, unsorted_faces);
+            split(cur_f, f, unsorted_faces);
         }
     }
     root->faces = current;
@@ -430,27 +416,22 @@ void render(face f) {
     //     line(pt1[0], pt1[1], pt2[0], pt2[1]);
     // }
 }
-//TODO fucked up order or smth renders infront although far away
+
 void paint(tree_node *root, point view) {
     if(root == NULL)
         return;
     plane p = face2plane(root->faces->head->f);
     float view_sign = dist(view, p);
-    // if (root->left == NULL && root->right == NULL){
-    //     while(!isEmpty(root->faces))
-    //         render(pop(root->faces));
-    //     return;
-    // }
-    if(view_sign > 0){
-        paint(root->left, view);
+    if(view_sign > EPS){
+        paint(root->right, view);
         while(!isEmpty(root->faces))
             render(pop(root->faces));
-        paint(root->right, view);
+        paint(root->left, view);
     } else {
-        paint(root->right, view);
+        paint(root->left, view);
         while(!isEmpty(root->faces))
             render(pop(root->faces));
-        paint(root->left, view);
+        paint(root->right, view);
     }
     
 }
@@ -489,7 +470,7 @@ point convert(float pt[3]) {
     return res;
 }
 
-void bakeShadow(float coords[][3], int graphs[], list *visible) {
+void bakeShadow(float coords[][3], int graphs[], point light_pt, list *visible) {
     for (int i = 0; i < FACES_SIZE; i += 3) {
         point a = convert(coords[graphs[i]]);
         point b = convert(coords[graphs[i + 1]]);
@@ -498,14 +479,12 @@ void bakeShadow(float coords[][3], int graphs[], list *visible) {
         point shadow[3];
         float projected_coords[3][3];
         for (int i = 0; i < 3; i++) {
-            float t = (ground - poly[i].y) / light_ray.y;
-            shadow[i] = {poly[i].x + t*light_ray.x, 
-                            ground,
-                            poly[i].z + t*light_ray.z};
+            float t = (ground - poly[i].y) / light_pt.y;
+            shadow[i] = {poly[i].x + t*(poly[i].x - light_pt.x), 
+                         ground,
+                         poly[i].z + t*(poly[i].x - light_pt.z)};
         }
         push(visible, newListNode({shadow[0], shadow[1], shadow[2], LIGHTGRAY}));
-        // project(shadow, projected_coords);
-        // fill(projected_coords, LIGHTGRAY);
     }
 }
 
@@ -517,7 +496,7 @@ void backfaceCulling(float coords[][3], int graphs[], list *visible) {
         point d1 = subtract(b, a);
         point d2 = subtract(c, a);
         point n = cross(d1, d2);
-        if (dot(a, n) < 0) {
+        if (dot(a, n) > 0) {
             face f = {a, b, c, clrs[i / 3]};
             push(visible, newListNode(f));
         }
@@ -526,10 +505,9 @@ void backfaceCulling(float coords[][3], int graphs[], list *visible) {
 
 int main() {
     point view = {0, 0, 0};
-    float offsets[2][3] = {{-2, -0.5, 2}, {-1, -1, 0}}; 
-    // float offsets[2][3] = {{0.8, -1.2, 0}, {1, -1, 0}}; 
-    // float offsets[2][3] = {{0, 0, 0}, {0, 0, 0}}; 
-    float angles[2][3]  = {{0, -20, 0}, {0, 0, 0}};
+    point light_pt = {20, 10, 0};
+    float offsets[2][3] = {{-1, -0.5, 0}, {-1, -1, 0}}; 
+    float angles[2][3]  = {{0, -80, -40}, {0, 0, 0}};
     bool too_close = false;
     int angle = 0, n = 0;
     float speed = INIT_SPEED;
@@ -557,7 +535,20 @@ int main() {
             else if (ch == 'q') {
                 if (!too_close)
                     offset[2] -= speed;
-            } 
+            }
+            else if (ch == 'k')
+                light_pt.y -= speed;
+            else if (ch == 'l')
+                light_pt.y += speed;
+            else if (ch == 'h')
+                light_pt.x -= speed;
+            else if (ch == 'j')
+                light_pt.x += speed;
+            else if (ch == 'u')
+                light_pt.z += speed;
+            else if (ch == 'i') {
+                light_pt.z -= speed;
+            }
             else if (ch == '6') 
                 angle[2] -= speed + 10;
             else if (ch == '4') 
@@ -618,7 +609,7 @@ int main() {
                 scale(coords[i], coefs[k][0], coefs[k][1]);
                 translate(coords[i], origin);
             }
-            // bakeShadow(coords, graphs, unsorted_faces);
+            bakeShadow(coords, graphs, light_pt, unsorted_faces);
             backfaceCulling(coords, graphs, unsorted_faces);
         }
         tree_node *root = newNode();
